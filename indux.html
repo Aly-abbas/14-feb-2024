@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+   <script>
+    ////////////////////////////////////////////////////////////////////////////////
+"use strict";
+console.clear();
+
+requestAnimationFrame(main);
+
+function main(){
+	const cont = document.body;
+	const canvas = document.createElement('canvas');
+	const canvasSize = [0, 0];
+	canvas.style.display = 'block';
+	
+	cont.style.margin = '0';
+	cont.appendChild(canvas);
+	
+	const canvasCtx = canvas.getContext('2d');
+	
+	const state = createState(canvasSize);
+	
+	window.addEventListener('resize', () =>
+													onResize(canvasCtx, canvasSize, state));
+	onResize(canvasCtx, canvasSize, state);
+	
+	// precooling
+	for(let i = 0; i < 10; ++i) process(state, canvasCtx, canvasSize, 1);
+	
+	let lastTime = Date.now() / 1000;
+	const loop = () => {
+		let time = Date.now() / 1000;
+		let timeDelta = time - lastTime;
+		if(timeDelta > 1) timeDelta = 1;
+		lastTime = time;
+		process(state, canvasCtx, canvasSize, timeDelta);
+		render(state, canvasCtx, canvasSize, timeDelta);
+		requestAnimationFrame(loop);
+	};
+	requestAnimationFrame(loop);
+}
+
+function createState(canvasSize){
+	const state = {
+		time: 0,
+		stars: [],
+		path: new Path2D(),
+	};
+	return state;
+}
+
+function process(state, canvasCtx, canvasSize, timeDelta){
+	state.time += timeDelta;
+	
+	const nStars = 256;
+	while(state.stars.length < nStars){
+		state.stars.push(createStar(state, canvasSize));
+	}
+	
+	for(let i = 0; i < state.stars.length; ++i){
+		const star = state.stars[i];
+		star.isInPath = canvasCtx.isPointInPath(state.path, star.pos[0], star.pos[1]);
+		
+		const newPathFactor = star.isInPath ? 0.25 : 1;
+		star.pathFactor = star.pathFactor * 0.95 + newPathFactor * 0.05;
+		
+		star.pos[0] += star.vel[0] * timeDelta * star.pathFactor;
+		star.pos[1] += star.vel[1] * timeDelta * star.pathFactor;
+		
+		if(star.pos[1] > canvasSize[1] ||
+			 star.pos[0] < 0 ||
+			 star.pos[0] > canvasSize[0]
+			){
+			state.stars.splice(i--, 1);
+			continue;
+		}
+	} // for i
+} // process
+
+function render(state, canvasCtx, canvasSize, timeDelta){
+	canvasCtx.fillStyle = '#000000';
+	canvasCtx.fillRect(0, 0, canvasSize[0], canvasSize[1]);
+	for(const star of state.stars){
+		drawStar(canvasCtx, state, star);
+	}
+	
+	canvasCtx.strokeStyle = '#00ff00';
+	// canvasCtx.stroke(state.path);
+}
+
+function createStar(state, canvasSize){
+	const z = 10 + Math.random() * 10;
+	const speed = 2000 / z;
+	const star = {
+		createTime: state.time,
+		pos: [Math.random() * canvasSize[0], 0],
+		vel: [
+			(Math.random() * 2 - 1) * speed / 4,
+			speed,
+		],
+		r: 100 / z,
+		colorAngle: 0 + (Math.random() * 2 - 1) * 30,
+		pulseTime: 0.25 + 1.5 * Math.random(),
+		isInPath: false,
+		pathFactor: 1,
+	};
+	return star;
+}
+
+function drawStar(canvasCtx, state, star){
+	let offset = 2000;
+	const lt = state.time - star.createTime;
+	const rf = 0.25;
+	const pulseTime = star.pulseTime * (star.isPointInPath ? 4 : 1);
+	const ratio = 1 - rf + rf * (Math.sin(Math.PI * lt * pulseTime) / 2 - 0.5);
+	
+	const h = star.colorAngle;
+	const s = 100 * ratio;
+	const l = 80 * ratio * (0.5 + 0.5 * (1 - star.pathFactor));
+	const color = `hsl(${h}, ${s}%, ${l}%)`;
+	
+	canvasCtx.beginPath();
+	
+	canvasCtx.arc(
+		star.pos[0] - offset,
+		star.pos[1],
+		star.r,
+		0, Math.PI * 2,
+	);
+	
+	canvasCtx.shadowOffsetX = offset;
+	canvasCtx.shadowBlur = star.r;
+	canvasCtx.shadowColor = color;
+	
+	canvasCtx.fillStyle = color;
+	canvasCtx.fill();
+	canvasCtx.shadowBlur = 0;
+}
+
+function onResize(canvasCtx, size, state){
+	const newSize = [window.innerWidth, window.innerHeight];
+	if(newSize[0] === size[0] && newSize[1] === size[1]) return;
+	const canvas = canvasCtx.canvas;
+	[canvas.width, canvas.height] = [size[0], size[1]] = newSize;
+	regeneratePath(state, size);
+}
+
+function regeneratePath(state, canvasSize){
+	const path = new Path2D();
+	const w = Math.min(canvasSize[0], canvasSize[1]);
+	const cx = canvasSize[0] * 0.5 - w / 2;
+	path.moveTo(
+		canvasSize[0] * 0.5,
+		canvasSize[1] * 0.3,
+	);
+	path.bezierCurveTo(
+		cx + w * 0.4,
+		canvasSize[1] * 0.2,
+		cx + w * 0,
+		canvasSize[1] * 0,
+		cx + w * 0.1,
+		canvasSize[1] * 0.4,
+	);
+	path.bezierCurveTo(
+		cx + w * 0.2,
+		canvasSize[1] * 0.6,
+		cx + w * 0.4,
+		canvasSize[1] * 0.6,
+		cx + w * 0.5,
+		canvasSize[1] * 0.8,
+	);
+	path.bezierCurveTo(
+		cx + w * (1 - 0.4),
+		canvasSize[1] * 0.6,
+		cx + w * (1 - 0.2),
+		canvasSize[1] * 0.6,
+		cx + w * (1 - 0.1),
+		canvasSize[1] * 0.4,
+	);
+	path.bezierCurveTo(
+		cx + w * (1 - 0),
+		canvasSize[1] * 0,
+		cx + w * (1 - 0.4),
+		canvasSize[1] * 0.2,
+		cx + w * 0.5,
+		canvasSize[1] * 0.3,
+	);
+	state.path = path;
+}
+
+   </script>
+
+</body>
+</html>
